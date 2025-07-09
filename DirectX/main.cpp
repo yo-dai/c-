@@ -36,7 +36,7 @@ void DebugOutputFormatString(const char* format, ...)
 
 const unsigned int window_width = 1280;
 const unsigned int window_height = 720;
-
+float clearColor[] = { 0.0f, 1.0f, 1.0f, 1.0f };
 
 #ifdef _DEBUG
 int main()
@@ -154,6 +154,47 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
 	swapchainDesc.Flags = DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH;
 	result = _dxgiFactory->CreateSwapChainForHwnd(_cmdQueue, hwnd, &swapchainDesc, nullptr, nullptr, (IDXGISwapChain1**)&_swapchain);
 
+	D3D12_DESCRIPTOR_HEAP_DESC heapDesc = {};
+
+	heapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
+	heapDesc.NodeMask = 0;
+	heapDesc.NumDescriptors = 2;
+	heapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
+	ID3D12DescriptorHeap* rtvHeaps = nullptr;
+	result = _dev->CreateDescriptorHeap(&heapDesc, IID_PPV_ARGS(&rtvHeaps));
+
+	DXGI_SWAP_CHAIN_DESC swcDesc = {};
+	result = _swapchain->GetDesc(&swcDesc);
+
+	vector<ID3D12Resource*> _backBuffers(swcDesc.BufferCount);
+	for (int idx = 0; idx < swcDesc.BufferCount; ++idx) 
+	{
+		result = _swapchain->GetBuffer(idx, IID_PPV_ARGS(&_backBuffers[idx]));
+		
+		D3D12_CPU_DESCRIPTOR_HANDLE handle = rtvHeaps->GetCPUDescriptorHandleForHeapStart();
+		handle.ptr += idx * _dev->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
+		_dev->CreateRenderTargetView(_backBuffers[idx], nullptr, handle);
+	}
+
+	result = _cmdAllocator->Reset();
+	auto bbIdx = _swapchain->GetCurrentBackBufferIndex();
+
+	ID3D12Fence* _fence = nullptr;
+	UINT64 _fenceVal = 0;
+
+	result = _dev->CreateFence(_fenceVal, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&_fence));
+	HRESULT Signal(ID3D12Fence* pFence, UINT64 Value);
+	_cmdQueue->Signal(_fence, ++_fenceVal);
+	while (_fence->GetCompletedValue() != _fenceVal)
+	{
+		auto event = CreateEvent(nullptr, false, false, nullptr);
+		_fence->SetEventOnCompletion(_fenceVal, event);
+		WaitForSingleObject(event, INFINITE);
+		CloseHandle(event);
+	}
+
+	
+
 	ShowWindow(hwnd, SW_SHOW);
 
 	MSG msg = {};
@@ -166,10 +207,38 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
 			DispatchMessage(&msg);
 		}
 
+		D3D12_RESOURCE_BARRIER BarrierDesc = {};
+		BarrierDesc.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+		BarrierDesc.Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
+		BarrierDesc.Transition.pResource = _backBuffers[bbIdx];
+		BarrierDesc.Transition.Subresource = 0;
+		BarrierDesc.Transition.StateBefore = D3D12_RESOURCE_STATE_PRESENT;
+		BarrierDesc.Transition.StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET;
+		_cmdList->ResourceBarrier(1, &BarrierDesc);
+
+		auto rtvH = rtvHeaps->GetCPUDescriptorHandleForHeapStart();
+		rtvH.ptr += bbIdx * _dev->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
+		_cmdList->OMSetRenderTargets(1, &rtvH, true, nullptr);
+
+		_cmdList->ClearRenderTargetView(rtvH, clearColor, 0, nullptr);
+		_cmdList->Close();
+
+		ID3D12CommandList* cmdlists[] = { _cmdList };
+		_cmdQueue->ExecuteCommandLists(1, cmdlists);
+		_cmdAllocator->Release();
+		_cmdList->Reset(_cmdAllocator, nullptr);
+
+		_swapchain->Present(1, 0);
+
+
+
+
 		if (msg.message == WM_QUIT) 
 		{
 			break;
 		}
+
+
 	}
 
 
