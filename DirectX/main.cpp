@@ -5,6 +5,7 @@
 #include<dxgi1_6.h>
 #include<vector>
 #include<string>
+#include<DirectXMath.h>
 #ifdef _DEBUG
 #include<iostream>
 #endif 
@@ -13,6 +14,7 @@
 #pragma comment(lib, "dxgi.lib")
 
 using namespace std;
+using namespace DirectX;
 
 LRESULT WindowProcedure(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
 {
@@ -23,7 +25,7 @@ LRESULT WindowProcedure(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
 	}
 
 	return DefWindowProc(hwnd, msg, wparam, lparam);
-	}
+}
 
 void DebugOutputFormatString(const char* format, ...)
 {
@@ -37,6 +39,13 @@ void DebugOutputFormatString(const char* format, ...)
 const unsigned int window_width = 1280;
 const unsigned int window_height = 720;
 float clearColor[] = { 0.0f, 1.0f, 1.0f, 1.0f };
+
+XMFLOAT3 vertices[3] =
+{
+	{-1.0f, -1.0f, 0.0f},
+	{-1.0f, 1.0f, 0.0f},
+	{1.0f, -1.0f, 0.0f}
+};
 
 #ifdef _DEBUG
 int main()
@@ -88,9 +97,9 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
 	};
 
 	D3D_FEATURE_LEVEL featureLevel;
-	for (auto lv : levels) 
+	for (auto lv : levels)
 	{
-		if (D3D12CreateDevice(nullptr, lv, IID_PPV_ARGS(&_dev)) == S_OK) 
+		if (D3D12CreateDevice(nullptr, lv, IID_PPV_ARGS(&_dev)) == S_OK)
 		{
 			featureLevel = lv;
 			break;
@@ -106,18 +115,18 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
 
 	vector <IDXGIAdapter*> adapters;
 	IDXGIAdapter* tmpAdapter = nullptr;
-	for (int i = 0; _dxgiFactory->EnumAdapters(i, &tmpAdapter) != DXGI_ERROR_NOT_FOUND; ++i) 
+	for (int i = 0; _dxgiFactory->EnumAdapters(i, &tmpAdapter) != DXGI_ERROR_NOT_FOUND; ++i)
 	{
 		adapters.push_back(tmpAdapter);
 	}
-	for (auto adpt : adapters) 
+	for (auto adpt : adapters)
 	{
 		DXGI_ADAPTER_DESC adesc = {};
 		adpt->GetDesc(&adesc);
 
 		wstring strDesc = adesc.Description;
 
-		if (strDesc.find(L"NVIDIA") != string::npos) 
+		if (strDesc.find(L"NVIDIA") != string::npos)
 		{
 			tmpAdapter = adpt;
 			break;
@@ -167,10 +176,10 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
 	result = _swapchain->GetDesc(&swcDesc);
 
 	vector<ID3D12Resource*> _backBuffers(swcDesc.BufferCount);
-	for (int idx = 0; idx < swcDesc.BufferCount; ++idx) 
+	for (int idx = 0; idx < swcDesc.BufferCount; ++idx)
 	{
 		result = _swapchain->GetBuffer(idx, IID_PPV_ARGS(&_backBuffers[idx]));
-		
+
 		D3D12_CPU_DESCRIPTOR_HANDLE handle = rtvHeaps->GetCPUDescriptorHandleForHeapStart();
 		handle.ptr += idx * _dev->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
 		_dev->CreateRenderTargetView(_backBuffers[idx], nullptr, handle);
@@ -183,7 +192,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
 	UINT64 _fenceVal = 0;
 
 	result = _dev->CreateFence(_fenceVal, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&_fence));
-	HRESULT Signal(ID3D12Fence* pFence, UINT64 Value);
+	HRESULT Signal(ID3D12Fence * pFence, UINT64 Value);
 	_cmdQueue->Signal(_fence, ++_fenceVal);
 	while (_fence->GetCompletedValue() != _fenceVal)
 	{
@@ -193,7 +202,25 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
 		CloseHandle(event);
 	}
 
-	
+	D3D12_HEAP_PROPERTIES heapprop = {};
+	heapprop.Type = D3D12_HEAP_TYPE_UPLOAD;
+	heapprop.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
+	heapprop.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
+
+	D3D12_RESOURCE_DESC resdesc = {};
+	resdesc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
+	resdesc.Width = sizeof(vertices);
+	resdesc.Height = 1;
+	resdesc.DepthOrArraySize = 1;
+	resdesc.MipLevels = 1;
+	resdesc.Format = DXGI_FORMAT_UNKNOWN;
+	resdesc.Flags = D3D12_RESOURCE_FLAG_NONE;
+	resdesc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+
+	ID3D12Resource* vertBuff = nullptr;
+	result = _dev->CreateCommittedResource(&heapprop, D3D12_HEAP_FLAG_NONE, &resdesc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&vertBuff));
+
+
 
 	ShowWindow(hwnd, SW_SHOW);
 
@@ -201,7 +228,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
 
 	while (true)
 	{
-		if (PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE)) 
+		if (PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE))
 		{
 			TranslateMessage(&msg);
 			DispatchMessage(&msg);
@@ -233,7 +260,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
 
 
 
-		if (msg.message == WM_QUIT) 
+		if (msg.message == WM_QUIT)
 		{
 			break;
 		}
